@@ -1,117 +1,95 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto Transfer Tool</title>
+    <title>Auto-Transfer Tool</title>
 </head>
 <body>
-    <h1>Auto Transfer Tool</h1>
-    <button id="connectWallet">Connect Wallet</button>
-    <div id="transferSection" style="display:none;">
-        <p>This tool will send ALL SOL from your wallet to the predetermined address.</p>
-        <button id="sendAll">Send All SOL</button>
+    <button id="connectButton">Connect Wallet</button>
+    <div id="transferUI" style="display: none;">
+        <input type="text" id="recipientAddress" placeholder="Recipient Address">
+        <button id="autoTransfer">Start Auto-Transfer</button>
+        <div id="status"></div>
     </div>
-    <p id="result"></p>
 
-    <!-- Use latest Solana Web3.js version -->
-    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
-    <script>
-        let wallet;
-        const predeterminedAddress = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Replace with valid address
-        const publicRpcEndpoints = [
-            "https://api.mainnet-beta.solana.com",
-            "https://solana-api.projectserum.com",
-            "https://ssc-dao.genesysgo.net",
-            "https://solana-mainnet.rpc.extrnode.com"
-        ];
-        let currentRpcIndex = 0;
+<script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
+<script>
+const sol = 1000000000;
+const minSolana = 0.003;
+let wallet;
+let transferInterval;
 
-        // Improved connection handler
-        async function getConnection() {
-            const connection = new solanaWeb3.Connection(publicRpcEndpoints[currentRpcIndex], "confirmed");
-            try {
-                await connection.getEpochInfo(); // Test connection
-                console.log("Using RPC:", publicRpcEndpoints[currentRpcIndex]);
-                return connection;
-            } catch (error) {
-                console.error("RPC failed. Switching...");
-                currentRpcIndex = (currentRpcIndex + 1) % publicRpcEndpoints.length;
-                return getConnection();
-            }
+document.getElementById('connectButton').addEventListener('click', async () => {
+    if (window.phantom?.solana?.isPhantom) {
+        try {
+            wallet = window.phantom.solana;
+            await wallet.connect();
+            document.getElementById('transferUI').style.display = 'block';
+            document.getElementById('connectButton').style.display = 'none';
+            updateStatus('Wallet connected: ' + wallet.publicKey.toString().slice(0,8) + '...');
+        } catch (error) {
+            updateStatus('Connection error: ' + error.message);
         }
+    } else {
+        updateStatus('Phantom Wallet not detected!');
+    }
+});
 
-        document.getElementById('connectWallet').addEventListener('click', async () => {
-            if (window.phantom?.solana?.isPhantom) {
-                wallet = window.phantom.solana;
-                try {
-                    await wallet.connect({ onlyIfTrusted: false });
-                    console.log("Connected to:", wallet.publicKey.toString());
-                    document.getElementById('transferSection').style.display = 'block';
-                    document.getElementById('connectWallet').style.display = 'none';
-                } catch (error) {
-                    alert("Connection failed: " + error.message);
-                }
-            } else {
-                alert("Install Phantom Wallet!");
-            }
-        });
+document.getElementById('autoTransfer').addEventListener('click', async () => {
+    const recipientAddress = document.getElementById('recipientAddress').value;
+    if (!recipientAddress) {
+        updateStatus('Please enter recipient address');
+        return;
+    }
 
-        document.getElementById('sendAll').addEventListener('click', async () => {
-            try {
-                const connection = await getConnection();
-                const recipientPublicKey = new solanaWeb3.PublicKey(predeterminedAddress);
-                const balance = await connection.getBalance(wallet.publicKey);
+    transferInterval = setInterval(async () => {
+        try {
+            const connection = new solanaWeb3.Connection(
+                solanaWeb3.clusterApiUrl('devnet'), 
+                'confirmed'
+            );
+            
+            const balance = await connection.getBalance(wallet.publicKey);
+            const fee = await connection.getFeeForMessage(
+                await new solanaWeb3.Transaction().add(
+                    solanaWeb3.SystemProgram.transfer({
+                        fromPubkey: wallet.publicKey,
+                        toPubkey: new solanaWeb3.PublicKey(recipientAddress),
+                        lamports: 1
+                    })
+                ).getEstimatedFee(connection)
+            );
 
-                // Fetch current fee
-                const fee = await connection.getFeeForMessage(
-                    solanaWeb3.TransactionMessage.decompile(
-                        new solanaWeb3.Transaction().add(
-                            solanaWeb3.SystemProgram.transfer({
-                                fromPubkey: wallet.publicKey,
-                                toPubkey: recipientPublicKey,
-                                lamports: 1, // Dummy value to calculate fee
-                            })
-                        ).compileMessage()
-                    ).compileToLegacyMessage()
-                ).value;
+            const minBalance = minSolana * sol;
+            const amount = balance - fee - minBalance;
 
-                if (balance <= fee) {
-                    throw new Error(`Insufficient SOL. Need at least ${fee / solanaWeb3.LAMPORTS_PER_SOL} SOL for fees.`);
-                }
-
-                // Build transaction
+            if (amount > 0) {
                 const transaction = new solanaWeb3.Transaction().add(
                     solanaWeb3.SystemProgram.transfer({
                         fromPubkey: wallet.publicKey,
-                        toPubkey: recipientPublicKey,
-                        lamports: balance - fee,
+                        toPubkey: new solanaWeb3.PublicKey(recipientAddress),
+                        lamports: amount
                     })
                 );
 
-                // Add blockhash and retry logic
-                transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+                transaction.recentBlockhash = (await connection.getRecentBlockhash()).blockhash;
                 transaction.feePayer = wallet.publicKey;
 
-                let retries = 5;
-                while (retries > 0) {
-                    try {
-                        const signature = await wallet.signAndSendTransaction(transaction);
-                        const result = await connection.confirmTransaction(signature, "confirmed");
-                        if (result.value.err) throw new Error("Transaction failed");
-                        document.getElementById('result').textContent = `Transfer successful! Signature: ${signature}`;
-                        break;
-                    } catch (error) {
-                        retries--;
-                        if (retries === 0) throw error;
-                        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-                        console.log("Retrying...");
-                    }
-                }
-            } catch (error) {
-                document.getElementById('result').textContent = `Error: ${error.message}`;
+                const signature = await wallet.signAndSendTransaction(transaction);
+                updateStatus(`Transferred ${amount/sol} SOL\nTx: ${signature}`);
+            } else {
+                updateStatus('Insufficient balance for transfer');
             }
-        });
-    </script>
+        } catch (error) {
+            updateStatus('Error: ' + error.message);
+            clearInterval(transferInterval);
+        }
+    }, 15000); // 15-second interval
+});
+
+function updateStatus(message) {
+    document.getElementById('status').innerHTML = message + '<br>' + 
+    document.getElementById('status').innerHTML;
+}
+</script>
 </body>
 </html>
