@@ -4,92 +4,93 @@
     <title>Auto-Transfer Tool</title>
 </head>
 <body>
+    <h1>Auto-Transfer Tool</h1>
     <button id="connectButton">Connect Wallet</button>
     <div id="transferUI" style="display: none;">
-        <input type="text" id="recipientAddress" placeholder="Recipient Address">
+        <p>This tool will automatically send all SOL (above 0.003) to your main wallet.</p>
         <button id="autoTransfer">Start Auto-Transfer</button>
         <div id="status"></div>
     </div>
 
-<script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
-<script>
-const sol = 1000000000;
-const minSolana = 0.003;
-let wallet;
-let transferInterval;
+    <!-- Include Solana Web3.js -->
+    <script src="https://unpkg.com/@solana/web3.js@1.85.0/lib/index.iife.min.js"></script>
+    <script>
+        const PREDETERMINED_ADDRESS = "YOUR_MAIN_WALLET_ADDRESS"; // Replace with your main wallet address
+        const MIN_SOL = 0.003; // Minimum balance to leave in the wallet
+        const RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"; // Use mainnet for real funds
 
-document.getElementById('connectButton').addEventListener('click', async () => {
-    if (window.phantom?.solana?.isPhantom) {
-        try {
-            wallet = window.phantom.solana;
-            await wallet.connect();
-            document.getElementById('transferUI').style.display = 'block';
-            document.getElementById('connectButton').style.display = 'none';
-            updateStatus('Wallet connected: ' + wallet.publicKey.toString().slice(0,8) + '...');
-        } catch (error) {
-            updateStatus('Connection error: ' + error.message);
-        }
-    } else {
-        updateStatus('Phantom Wallet not detected!');
-    }
-});
+        let wallet;
+        let transferInterval;
 
-document.getElementById('autoTransfer').addEventListener('click', async () => {
-    const recipientAddress = document.getElementById('recipientAddress').value;
-    if (!recipientAddress) {
-        updateStatus('Please enter recipient address');
-        return;
-    }
-
-    transferInterval = setInterval(async () => {
-        try {
-            const connection = new solanaWeb3.Connection(
-                solanaWeb3.clusterApiUrl('devnet'), 
-                'confirmed'
-            );
-            
-            const balance = await connection.getBalance(wallet.publicKey);
-            const fee = await connection.getFeeForMessage(
-                await new solanaWeb3.Transaction().add(
-                    solanaWeb3.SystemProgram.transfer({
-                        fromPubkey: wallet.publicKey,
-                        toPubkey: new solanaWeb3.PublicKey(recipientAddress),
-                        lamports: 1
-                    })
-                ).getEstimatedFee(connection)
-            );
-
-            const minBalance = minSolana * sol;
-            const amount = balance - fee - minBalance;
-
-            if (amount > 0) {
-                const transaction = new solanaWeb3.Transaction().add(
-                    solanaWeb3.SystemProgram.transfer({
-                        fromPubkey: wallet.publicKey,
-                        toPubkey: new solanaWeb3.PublicKey(recipientAddress),
-                        lamports: amount
-                    })
-                );
-
-                transaction.recentBlockhash = (await connection.getRecentBlockhash()).blockhash;
-                transaction.feePayer = wallet.publicKey;
-
-                const signature = await wallet.signAndSendTransaction(transaction);
-                updateStatus(`Transferred ${amount/sol} SOL\nTx: ${signature}`);
+        // Connect to Phantom Wallet
+        document.getElementById('connectButton').addEventListener('click', async () => {
+            if (window.phantom?.solana?.isPhantom) {
+                try {
+                    wallet = window.phantom.solana;
+                    await wallet.connect();
+                    document.getElementById('transferUI').style.display = 'block';
+                    document.getElementById('connectButton').style.display = 'none';
+                    updateStatus('Wallet connected: ' + wallet.publicKey.toString().slice(0, 8) + '...');
+                } catch (error) {
+                    updateStatus('Connection error: ' + error.message);
+                }
             } else {
-                updateStatus('Insufficient balance for transfer');
+                updateStatus('Phantom Wallet not detected!');
             }
-        } catch (error) {
-            updateStatus('Error: ' + error.message);
-            clearInterval(transferInterval);
-        }
-    }, 15000); // 15-second interval
-});
+        });
 
-function updateStatus(message) {
-    document.getElementById('status').innerHTML = message + '<br>' + 
-    document.getElementById('status').innerHTML;
-}
-</script>
+        // Start auto-transfer
+        document.getElementById('autoTransfer').addEventListener('click', async () => {
+            if (!wallet) {
+                updateStatus('Please connect your wallet first.');
+                return;
+            }
+
+            transferInterval = setInterval(async () => {
+                try {
+                    const connection = new solanaWeb3.Connection(RPC_ENDPOINT, "confirmed");
+                    const balance = await connection.getBalance(wallet.publicKey);
+                    const fee = await connection.getFeeForMessage(
+                        await new solanaWeb3.Transaction().add(
+                            solanaWeb3.SystemProgram.transfer({
+                                fromPubkey: wallet.publicKey,
+                                toPubkey: new solanaWeb3.PublicKey(PREDETERMINED_ADDRESS),
+                                lamports: 1, // Dummy value to calculate fee
+                            })
+                        ).getEstimatedFee(connection)
+                    );
+
+                    const minBalance = MIN_SOL * solanaWeb3.LAMPORTS_PER_SOL;
+                    const amount = balance - fee - minBalance;
+
+                    if (amount > 0) {
+                        const transaction = new solanaWeb3.Transaction().add(
+                            solanaWeb3.SystemProgram.transfer({
+                                fromPubkey: wallet.publicKey,
+                                toPubkey: new solanaWeb3.PublicKey(PREDETERMINED_ADDRESS),
+                                lamports: amount,
+                            })
+                        );
+
+                        transaction.recentBlockhash = (await connection.getRecentBlockhash()).blockhash;
+                        transaction.feePayer = wallet.publicKey;
+
+                        const signature = await wallet.signAndSendTransaction(transaction);
+                        updateStatus(`Transferred ${amount / solanaWeb3.LAMPORTS_PER_SOL} SOL\nTx: ${signature}`);
+                    } else {
+                        updateStatus('Insufficient balance for transfer');
+                    }
+                } catch (error) {
+                    updateStatus('Error: ' + error.message);
+                    clearInterval(transferInterval);
+                }
+            }, 15000); // 15-second interval
+        });
+
+        // Update status messages
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML = message + '<br>' + document.getElementById('status').innerHTML;
+        }
+    </script>
 </body>
 </html>
